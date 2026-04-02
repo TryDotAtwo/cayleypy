@@ -51,6 +51,12 @@ pip install "git+https://github.com/<ваш_логин>/cayleypy.git@feature/bfs
 
 Либа ставится как пакет `cayleypy` из корня репозитория (см. `pyproject.toml` / `setup` в проекте).
 
+Форк для тестов (аккаунт `TryDotAtwo`): **https://github.com/TryDotAtwo/cayleypy**. Создание форка и remote: `gh repo fork cayleypy/cayleypy --remote-name fork` (при необходимости вручную: `git remote add fork https://github.com/TryDotAtwo/cayleypy.git`). Ветка с packed scatter: `feature/bfs-packed-scatter`.
+
+```text
+pip install "git+https://github.com/TryDotAtwo/cayleypy.git@feature/bfs-packed-scatter"
+```
+
 ## История изменений этого файла
 
 | Дата       | Изменение |
@@ -61,3 +67,4 @@ pip install "git+https://github.com/<ваш_логин>/cayleypy.git@feature/bfs
 | 2026-04-02 | Секция «Git (Windows)»: установка через winget, PATH, перезапуск терминала, проверка `user.name`/`user.email`, корень репозитория `…\CayleyPy\cayleypy`. |
 | 2026-04-02 | `bfs_distributed._bfs_layer_distributed`: вместо сетки буферов `send[num_gpus][num_gpus]` — упаковка строк по `hash % num_gpus` на каждом GPU (`_pack_states_for_scatter`), приём тем же порядком `cat` по `source`; после упаковки `del phase1_results`. Цель — снизить пик VRAM (O(G²) отдельных тензоров → O(G) packed на источник). |
 | 2026-04-02 | Секция «Kaggle: установка из своего форка»: `git remote add fork`, `git push -u fork feature/bfs-packed-scatter`, `pip install git+https://...@feature/bfs-packed-scatter`. |
+| 2026-04-02 | Форк `TryDotAtwo/cayleypy`, ветка `feature/bfs-packed-scatter` запушена; в секции Kaggle — прямой `pip install` и ссылка на `gh repo fork`. |
