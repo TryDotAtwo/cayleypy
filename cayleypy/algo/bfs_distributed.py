@@ -107,6 +107,36 @@ class BfsDistributed:
         merged_hashes, idx = torch.sort(merged_hashes, stable=True)
         return merged_states[idx], merged_hashes
 
+    @staticmethod
+    def _pack_states_for_scatter(
+        states: torch.Tensor,
+        hashes: torch.Tensor,
+        num_gpus: int,
+        state_width: int,
+        device: torch.device,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Упаковать строки по целевой карте (hash % num_gpus) в непрерывные сегменты.
+
+        Раньше для каждой пары (источник, приёмник) создавались отдельные тензоры (сетка num_gpus²),
+        что раздувало пик памяти. Здесь на каждом источнике один буфер: после стабильной сортировки
+        по ``ownership`` сегмент ``[offsets[dst] : offsets[dst+1]]`` — это ровно те же строки, что
+        ``states[(hashes % num_gpus) == dst]``, с тем же порядком внутри группы, что и при маске.
+        """
+        if len(hashes) == 0:
+            empty_s = torch.empty((0, state_width), dtype=torch.int64, device=device)
+            empty_h = torch.empty(0, dtype=torch.int64, device=device)
+            offsets = torch.zeros(num_gpus + 1, dtype=torch.int64, device=device)
+            return empty_s, empty_h, offsets
+        ownership = hashes % num_gpus
+        # Стабильная сортировка по владельцу хэша: внутри одного dst порядок строк как в исходном states.
+        sorted_idx = torch.argsort(ownership, stable=True)
+        packed_states = states.index_select(0, sorted_idx)
+        packed_hashes = hashes.index_select(0, sorted_idx)
+        counts = torch.bincount(ownership, minlength=num_gpus)
+        offsets = torch.zeros(num_gpus + 1, dtype=torch.int64, device=device)
+        offsets[1:] = counts.cumsum(dim=0)
+        return packed_states, packed_hashes, offsets
+
     @classmethod
     def _bfs_layer_distributed(
         cls,
@@ -132,28 +162,45 @@ class BfsDistributed:
             for stream in streams:
                 stream.synchronize()
 
-            send_states = [
-                [cls._empty_part(device, graph.encoded_state_size)[0] for device in graph.gpu_devices]
-                for _ in range(graph.num_gpus)
-            ]
-            send_hashes = [
-                [torch.empty(0, dtype=torch.int64, device=device) for device in graph.gpu_devices]
-                for _ in range(graph.num_gpus)
-            ]
-            for owner, (states, hashes) in enumerate(phase1_results):
-                if len(hashes) == 0:
-                    continue
-                ownership = hashes % graph.num_gpus
-                for target, device in enumerate(graph.gpu_devices):
-                    mask = ownership == target
-                    send_states[owner][target] = states[mask].to(device, non_blocking=True)
-                    send_hashes[owner][target] = hashes[mask].to(device, non_blocking=True)
+            # Фаза scatter без сетки send[num_gpus][num_gpus]: на каждом GPU один packed-буфер + смещения.
+            packed_states_list: list[torch.Tensor] = []
+            packed_hashes_list: list[torch.Tensor] = []
+            offsets_list: list[torch.Tensor] = []
+            for owner, device in enumerate(graph.gpu_devices):
+                states, hashes = phase1_results[owner]
+                packed_s, packed_h, off = cls._pack_states_for_scatter(
+                    states, hashes, graph.num_gpus, graph.encoded_state_size, device
+                )
+                packed_states_list.append(packed_s)
+                packed_hashes_list.append(packed_h)
+                offsets_list.append(off)
+            # Соседи phase1 больше не нужны — данные скопированы в packed; убираем ссылки до приёма.
+            del phase1_results
+
             torch.cuda.synchronize()
 
+            # Приём на GPU `owner`: cat по source 0..num_gpus-1, как в старой версии; сегменты из packed[source].
             for owner, device in enumerate(graph.gpu_devices):
                 with torch.cuda.stream(streams[owner]):
-                    received_states = torch.cat([send_states[source][owner] for source in range(graph.num_gpus)], dim=0)
-                    received_hashes = torch.cat([send_hashes[source][owner] for source in range(graph.num_gpus)], dim=0)
+                    pieces_s: list[torch.Tensor] = []
+                    pieces_h: list[torch.Tensor] = []
+                    for source in range(graph.num_gpus):
+                        off = offsets_list[source]
+                        start = int(off[owner].item())
+                        end = int(off[owner + 1].item())
+                        if start == end:
+                            continue
+                        # Копия на device приёмника (эквивалент старого states[mask].to(device)).
+                        pieces_s.append(packed_states_list[source][start:end].to(device, non_blocking=True))
+                        pieces_h.append(packed_hashes_list[source][start:end].to(device, non_blocking=True))
+                    if not pieces_s:
+                        continue
+                    if len(pieces_s) == 1:
+                        received_states = pieces_s[0]
+                        received_hashes = pieces_h[0]
+                    else:
+                        received_states = torch.cat(pieces_s, dim=0)
+                        received_hashes = torch.cat(pieces_h, dim=0)
                     if len(received_hashes) == 0:
                         continue
 
