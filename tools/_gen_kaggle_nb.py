@@ -1,17 +1,19 @@
-# Kaggle: два ячейки — upstream `main` и форк
+"""One-off generator for kaggle_upstream_fork_compare.ipynb — run from repo root: python tools/_gen_kaggle_nb.py"""
+import json
+from pathlib import Path
 
-**Удобнее всего:** готовый ноутбук **`cayleypy/kaggle_upstream_fork_compare.ipynb`** — загрузить на Kaggle (**File → Upload Notebook**) или добавить через **Add Data → Upload**. Перегенерация из исходников: `python tools/_gen_kaggle_nb.py` (корень репозитория).
+ROOT = Path(__file__).resolve().parent.parent
 
-**Результаты BFS (`layer_sizes`)** должны совпадать. **Время и память** сравниваются для отчёта (на одной машине шум возможен; assert только по слоям).
+md_intro = """## CayleyPy: upstream vs fork (Kaggle)
 
-**Settings → Internet: On.** Рабочая папка: `/kaggle/working` или `TMPDIR` / `/tmp`.
+- **Settings → Internet: On**
+- Запускайте **по порядку**: ячейка 1 (clone `main`, эталонный JSON), затем ячейка 2 (clone форка, сравнение).
+- **Assert** только по `layer_sizes`. Время и VRAM — отчёт (относительные % к upstream).
+- Форк по умолчанию: `TryDotAtwo/cayleypy` @ `feature/bfs-packed-scatter`. Переменные: `CAYLEY_FORK_URL`, `CAYLEY_FORK_BRANCH`.
+"""
 
----
-
-## Ячейка 1 — `cayleypy/cayleypy`, ветка `main`
-
-```python
-# --- Cell 1: upstream main ---
+# Read code from existing md-derived content: paste from kaggle_two_cells_compare.md cells
+CELL1 = r'''# --- Cell 1: upstream main ---
 import json
 import os
 import shutil
@@ -58,11 +60,9 @@ def benchmark_suite() -> dict:
     cuda_peak_mib: dict = {}
     cpu_tracemalloc_peak_mib: dict = {}
 
-    # Эталон из датасета — без замера BFS
     layer_sizes["expected_lrx8"] = list(load_dataset("lrx_cayley_growth")["8"])
     time_sec["expected_lrx8"] = 0.0
 
-    # CPU: пик кучи Python (tracemalloc) за вызов BFS
     tracemalloc.start()
     t0 = time.perf_counter()
     r_cpu = CayleyGraph(PermutationGroups.lrx(5), device="cpu", num_gpus=0).bfs(max_diameter=3)
@@ -129,16 +129,9 @@ print("layer_sizes:", json.dumps(upstream["layer_sizes"], indent=2, ensure_ascii
 print("time_sec:", json.dumps(upstream["time_sec"], indent=2, ensure_ascii=False))
 print("cuda_peak_mib:", json.dumps(upstream["cuda_peak_mib"], indent=2, ensure_ascii=False))
 print("cpu_tracemalloc_peak_mib:", json.dumps(upstream["cpu_tracemalloc_peak_mib"], indent=2, ensure_ascii=False))
-```
+'''
 
----
-
-## Ячейка 2 — форк (по умолчанию `TryDotAtwo/cayleypy`, `feature/bfs-packed-scatter`)
-
-Переопределение: `CAYLEY_FORK_URL`, `CAYLEY_FORK_BRANCH`.
-
-```python
-# --- Cell 2: fork + сравнение с ячейкой 1 ---
+CELL2 = r'''# --- Cell 2: fork + сравнение с ячейкой 1 ---
 import json
 import os
 import shutil
@@ -262,7 +255,6 @@ def _assert_layers_match():
 _assert_layers_match()
 print("OK: итоговые layer_sizes совпадают с upstream.\n")
 
-# Сравнение времени и памяти (информативно; не падаем из-за шума)
 ut, ft = upstream_report["time_sec"], fork_report["time_sec"]
 uc, fc = upstream_report["cuda_peak_mib"], fork_report["cuda_peak_mib"]
 upc, fpc = upstream_report["cpu_tracemalloc_peak_mib"], fork_report["cpu_tracemalloc_peak_mib"]
@@ -275,7 +267,7 @@ for k in sorted(set(ut.keys()) | set(ft.keys())):
     if a == 0:
         continue
     pct = 100.0 * (b - a) / a
-    print(f"  {k}: upstream={a} fork={b}  ({pct:+.1f}% от upstream)")
+    print(f"  {k}: upstream={a} fork={b}  ({pct:+.1f}% vs upstream)")
 
 print("\n--- CUDA пик (MiB, сумма по GPU после теста): upstream vs fork ---")
 for k in sorted(set(uc.keys()) | set(fc.keys())):
@@ -283,21 +275,47 @@ for k in sorted(set(uc.keys()) | set(fc.keys())):
     if a is None or b is None:
         continue
     pct = 100.0 * (b - a) / a if a else 0.0
-    print(f"  {k}: upstream={a} fork={b}  ({pct:+.1f}% от upstream)")
+    print(f"  {k}: upstream={a} fork={b}  ({pct:+.1f}% vs upstream)")
 
 print("\n--- CPU tracemalloc пик (MiB) для lrx5_cpu: upstream vs fork ---")
 for k in sorted(set(upc.keys()) | set(fpc.keys())):
     print(f"  {k}: upstream={upc.get(k)} fork={fpc.get(k)}")
 
-print("\nПолный отчёт fork (как в JSON-структуре):", json.dumps(fork_report, indent=2, ensure_ascii=False))
-```
+print("\nПолный отчёт fork:", json.dumps(fork_report, indent=2, ensure_ascii=False))
+'''
 
----
 
-Сначала выполните **ячейку 1**, затем **ячейку 2** в том же сеансе (одинаковые CUDA/CPU).
+def to_source(s: str) -> list:
+    if not s.endswith("\n"):
+        s += "\n"
+    return [s]
 
-**Замечания:**
 
-- **VRAM:** после каждого CUDA-теста — сумма `torch.cuda.max_memory_allocated` по всем устройствам; перед тестом — `reset_peak_memory_stats`.
-- **CPU:** для `lrx5_cpu` — пик по **tracemalloc** за вызов (не полный RSS процесса).
-- **Время:** `time.perf_counter()` вокруг одного вызова `bfs()` (построение графа + BFS внутри конструктора там, где так устроено).
+def main() -> None:
+    nb = {
+        "nbformat": 4,
+        "nbformat_minor": 5,
+        "metadata": {
+            "kernelspec": {
+                "display_name": "Python 3",
+                "language": "python",
+                "name": "python3",
+            },
+            "language_info": {
+                "name": "python",
+                "pygments_lexer": "ipython3",
+            },
+        },
+        "cells": [
+            {"cell_type": "markdown", "metadata": {}, "source": to_source(md_intro)},
+            {"cell_type": "code", "metadata": {}, "source": to_source(CELL1), "outputs": [], "execution_count": None},
+            {"cell_type": "code", "metadata": {}, "source": to_source(CELL2), "outputs": [], "execution_count": None},
+        ],
+    }
+    out = ROOT / "cayleypy" / "kaggle_upstream_fork_compare.ipynb"
+    out.write_text(json.dumps(nb, ensure_ascii=False, indent=1), encoding="utf-8")
+    print("Wrote", out)
+
+
+if __name__ == "__main__":
+    main()
