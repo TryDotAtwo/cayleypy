@@ -74,3 +74,4 @@ pip install "git+https://github.com/TryDotAtwo/cayleypy.git@feature/bfs-packed-s
 | 2026-04-02 | Форк `TryDotAtwo/cayleypy`, ветка `feature/bfs-packed-scatter` запушена; в секции Kaggle — прямой `pip install` и ссылка на `gh repo fork`. |
 | 2026-04-02 | `cayleypy/kaggle_fork_smoke.py`: дымовой тест форка для Kaggle; entry point `cayleypy-kaggle-smoke` в `pyproject.toml`. |
 | 2026-04-02 | `cayleypy/kaggle_two_cells_compare.md`: две ячейки — clone `main` / clone форка, сравнение `layer_sizes` с JSON из первой ячейки. |
+| 2026-04-02 | Тот же файл: замеры `time_sec`, `cuda_peak_mib` (сумма по GPU), `cpu_tracemalloc_peak_mib` для `lrx5_cpu`; assert только по `layer_sizes`; таблица сравнения времени/памяти fork vs upstream. |
