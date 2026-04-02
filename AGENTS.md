@@ -59,6 +59,8 @@ pip install "git+https://github.com/TryDotAtwo/cayleypy.git@feature/bfs-packed-s
 
 Дымовой тест после установки: `python -m cayleypy.kaggle_fork_smoke` (или консольная команда `cayleypy-kaggle-smoke`). См. модуль `cayleypy/kaggle_fork_smoke.py`.
 
+Сравнение **upstream `main`** и **форка** двумя ячейками Kaggle (git clone + общий `bfs_suite`, JSON после ячейки 1): `cayleypy/kaggle_two_cells_compare.md`.
+
 ## История изменений этого файла
 
 | Дата       | Изменение |
@@ -71,3 +73,4 @@ pip install "git+https://github.com/TryDotAtwo/cayleypy.git@feature/bfs-packed-s
 | 2026-04-02 | Секция «Kaggle: установка из своего форка»: `git remote add fork`, `git push -u fork feature/bfs-packed-scatter`, `pip install git+https://...@feature/bfs-packed-scatter`. |
 | 2026-04-02 | Форк `TryDotAtwo/cayleypy`, ветка `feature/bfs-packed-scatter` запушена; в секции Kaggle — прямой `pip install` и ссылка на `gh repo fork`. |
 | 2026-04-02 | `cayleypy/kaggle_fork_smoke.py`: дымовой тест форка для Kaggle; entry point `cayleypy-kaggle-smoke` в `pyproject.toml`. |
+| 2026-04-02 | `cayleypy/kaggle_two_cells_compare.md`: две ячейки — clone `main` / clone форка, сравнение `layer_sizes` с JSON из первой ячейки. |
