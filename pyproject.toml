@@ -57,6 +57,9 @@ docs = [
 "Homepage" = "https://github.com/cayleypy/cayleypy"
 "Documentation" = "https://cayleypy.github.io/cayleypy-docs/api.html"
 
+[project.scripts]
+cayleypy-kaggle-smoke = "cayleypy.kaggle_fork_smoke:main"
+
 [tool.setuptools]
 include-package-data = true
 
